@@ -11,6 +11,7 @@ import {
   PanResponderInstance,
   Animated
 } from "react-native";
+import { PureRow } from "./PureRow";
 
 function getRandomColor() {
   var letters = "0123456789ABCDEF";
@@ -57,7 +58,8 @@ export default class App extends React.Component {
   _panResponder: PanResponderInstance;
   flatList = createRef<FlatList<any>>();
   point = new Animated.ValueXY();
-  rowHeight = 0;
+  // rowHeight = 0;
+  rowHeight = 70;
   currentY = -1;
   scrollOffset = 0;
   flatlistHeight = -1;
@@ -147,12 +149,12 @@ export default class App extends React.Component {
         // console.log(this.currentY + 100, this.flatlistHeight, this.contentY);
         if (this.currentY + 100 > this.flatlistHeight) {
           this.flatList.current.scrollToOffset({
-            offset: this.scrollOffset + 5,
+            offset: this.scrollOffset + 20,
             animated: false
           });
         } else if (this.currentY < 100) {
           this.flatList.current.scrollToOffset({
-            offset: this.scrollOffset - 5,
+            offset: this.scrollOffset - 20,
             animated: false
           });
         }
@@ -160,7 +162,7 @@ export default class App extends React.Component {
         const newIdx = this.yToIndex(this.currentY);
         if (this.currIdx !== newIdx) {
           const data = immutableMove(this.state.data, this.currIdx, newIdx);
-          console.log("baddie");
+          console.log("setState");
           // console.log(this.currIdx, newIdx, data);
           this.currIdx = newIdx;
           this.setState({
@@ -174,31 +176,44 @@ export default class App extends React.Component {
     });
   };
 
+  handleLayout = e => {
+    this.rowHeight = e.nativeEvent.layout.height;
+  };
+
   render() {
     const { dragging, draggingIdx, data } = this.state;
 
     const renderItem = ({ item, index }, nope = false) => {
       return (
-        <View
-          style={{
-            padding: 16,
-            backgroundColor: colorMap[item],
-            display: "flex",
-            flexDirection: "row",
-            alignItems: "center",
-            opacity: !nope && index === draggingIdx ? 0 : 1
-          }}
-          onLayout={e => {
-            this.rowHeight = e.nativeEvent.layout.height;
-          }}
-        >
-          <View {...(nope ? {} : this._panResponder.panHandlers)}>
-            <Text style={{ fontSize: 32 }}>@</Text>
-          </View>
-          <Text style={{ fontSize: 18, textAlign: "center", flex: 1 }}>
-            {item}
-          </Text>
-        </View>
+        <PureRow
+          index={index}
+          nope={nope}
+          onLayout={this.handleLayout}
+          panHandlers={this._panResponder.panHandlers}
+          bgColor={colorMap[item]}
+          item={item}
+          draggingIdx={draggingIdx}
+        />
+        // <View
+        //   style={{
+        //     padding: 16,
+        //     backgroundColor: colorMap[item],
+        //     display: "flex",
+        //     flexDirection: "row",
+        //     alignItems: "center",
+        //     opacity: !nope && index === draggingIdx ? 0 : 1
+        //   }}
+        //   onLayout={e => {
+        //     this.rowHeight = e.nativeEvent.layout.height;
+        //   }}
+        // >
+        //   <View {...(nope ? {} : this._panResponder.panHandlers)}>
+        //     <Text style={{ fontSize: 32 }}>@</Text>
+        //   </View>
+        //   <Text style={{ fontSize: 18, textAlign: "center", flex: 1 }}>
+        //     {item}
+        //   </Text>
+        // </View>
       );
     };
 
@@ -227,12 +242,10 @@ export default class App extends React.Component {
             this.flatlistHeight = e.nativeEvent.layout.height;
             this.topOffset = e.nativeEvent.layout.y;
           }}
-          scrollEventThrottle={16}
+          scrollEventThrottle={32}
           data={data}
           scrollEnabled={!dragging}
-          renderItem={x => {
-            return renderItem(x);
-          }}
+          renderItem={renderItem}
           keyExtractor={item => "" + item}
         />
       </SafeAreaView>
