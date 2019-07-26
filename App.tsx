@@ -1,4 +1,5 @@
 import React, { useState, useCallback, createRef } from "react";
+import { debounce } from "lodash";
 import {
   StyleSheet,
   Text,
@@ -9,9 +10,16 @@ import {
   FlatList,
   SafeAreaView,
   PanResponderInstance,
-  Animated
+  Dimensions
 } from "react-native";
 import { PureRow } from "./PureRow";
+import { Test } from "./Test";
+import Wow from "./Wow";
+import Animated from "react-native-reanimated";
+import { PanGestureHandler, State } from "react-native-gesture-handler";
+const { width } = Dimensions.get("window");
+
+const { cond, eq, add, call, set, Value, event } = Animated;
 
 function getRandomColor() {
   var letters = "0123456789ABCDEF";
@@ -57,7 +65,7 @@ export default class App extends React.Component {
 
   _panResponder: PanResponderInstance;
   flatList = createRef<FlatList<any>>();
-  point = new Animated.ValueXY();
+  // point = new Animated.ValueXY();
   // rowHeight = 0;
   rowHeight = 70;
   currentY = -1;
@@ -67,61 +75,32 @@ export default class App extends React.Component {
   currIdx = 0;
   active = false;
 
+  dragY = new Value(0);
+  y = new Value(0);
+  offsetY = new Value(100);
+  gestureState = new Value(-1);
+  addY: Animated.Node<number>;
+  transY: Animated.Node<number>;
+  onGestureEvent: any;
+
   constructor(props) {
     super(props);
 
-    this._panResponder = PanResponder.create({
-      // Ask to be the responder:
-      onStartShouldSetPanResponder: (evt, gestureState) => true,
-      onStartShouldSetPanResponderCapture: (evt, gestureState) => true,
-      onMoveShouldSetPanResponder: (evt, gestureState) => true,
-      onMoveShouldSetPanResponderCapture: (evt, gestureState) => true,
-
-      onPanResponderGrant: (evt, gestureState) => {
-        // The gesture has started. Show visual feedback so the user knows
-        // what is happening!
-        // gestureState.d{x,y} will be set to zero now
-        this.active = true;
-        Animated.event([{ y: this.point.y }])({
-          y: gestureState.y0 - this.rowHeight / 2
-        });
-        this.currIdx = this.yToIndex(gestureState.y0);
-        this.setState(
-          {
-            dragging: true,
-            draggingIdx: this.currIdx
-          },
-          () => {
-            this.animateList();
-          }
-        );
-      },
-      onPanResponderMove: (evt, gestureState) => {
-        this.currentY = gestureState.moveY;
-        // The most recent move distance is gestureState.move{X,Y}
-        // The accumulated gesture distance since becoming responder is
-        // gestureState.d{x,y}
-        Animated.event([{ y: this.point.y }])({
-          y: gestureState.moveY - this.rowHeight / 2
-        });
-      },
-      onPanResponderTerminationRequest: (evt, gestureState) => false,
-      onPanResponderRelease: (evt, gestureState) => {
-        // The user has released all touches while this view is the
-        // responder. This typically means a gesture has succeeded
-        this.reset();
-      },
-      onPanResponderTerminate: (evt, gestureState) => {
-        // Another component has become the responder, so this gesture
-        // should be cancelled
-        this.reset();
-      },
-      onShouldBlockNativeResponder: (evt, gestureState) => {
-        // Returns whether this component should block native components from becoming the JS
-        // responder. Returns true by default. Is currently only supported on android.
-        return true;
+    this.onGestureEvent = event([
+      {
+        nativeEvent: {
+          absoluteY: this.y,
+          translationY: this.dragY,
+          state: this.gestureState
+        }
       }
-    });
+    ]);
+
+    this.addY = add(this.offsetY, this.dragY);
+
+    this.transY = cond(eq(this.gestureState, State.ACTIVE), this.addY, [
+      set(this.offsetY, this.addY)
+    ]);
   }
 
   yToIndex = (y: number) =>
@@ -180,16 +159,53 @@ export default class App extends React.Component {
     this.rowHeight = e.nativeEvent.layout.height;
   };
 
+  start = arr => {
+    this.currIdx = this.yToIndex(arr[0]);
+    this.setState({ dragging: true, draggingIdx: this.currIdx });
+  };
+
+  updateOrder = debounce(
+    y => {
+      const newIdx = this.yToIndex(y);
+      if (this.currIdx !== newIdx) {
+        console.log("setState", this.currIdx, newIdx);
+        this.setState({
+          data: immutableMove(this.state.data, this.currIdx, newIdx),
+          draggingIdx: this.yToIndex(y)
+        });
+        this.currIdx = newIdx;
+      }
+    },
+    150,
+    { maxWait: 150 }
+  );
+
+  move = ([y]) => {
+    if (y + 100 > this.flatlistHeight) {
+      this.flatList.current.scrollToOffset({
+        offset: this.scrollOffset + 20,
+        animated: false
+      });
+    } else if (y < 100) {
+      this.flatList.current.scrollToOffset({
+        offset: this.scrollOffset - 20,
+        animated: false
+      });
+    }
+
+    // this.updateOrder(y);
+  };
+
   render() {
     const { dragging, draggingIdx, data } = this.state;
 
     const renderItem = ({ item, index }, nope = false) => {
       return (
         <PureRow
+          onGestureEvent={this.onGestureEvent}
           index={index}
           nope={nope}
           onLayout={this.handleLayout}
-          panHandlers={this._panResponder.panHandlers}
           bgColor={colorMap[item]}
           item={item}
           draggingIdx={draggingIdx}
@@ -219,12 +235,32 @@ export default class App extends React.Component {
 
     return (
       <SafeAreaView style={styles.container}>
+        <Animated.Code>
+          {() =>
+            cond(
+              eq(this.gestureState, State.BEGAN),
+              call([this.y, this.addY, this.offsetY, this.transY], this.start)
+            )
+          }
+        </Animated.Code>
+        <Animated.Code>
+          {() => cond(eq(this.gestureState, State.END), call([], this.reset))}
+        </Animated.Code>
+        <Animated.Code>
+          {() =>
+            cond(eq(this.gestureState, State.ACTIVE), call([this.y], this.move))
+          }
+        </Animated.Code>
         {dragging ? (
           <Animated.View
             style={{
-              display: dragging ? "flex" : "none",
+              // transform: [
+              //   {
+              //     translateY: this.transY
+              //   }
+              // ],
+              top: this.y,
               position: "absolute",
-              top: this.point.getLayout().top,
               width: "100%",
               zIndex: 2
             }}
